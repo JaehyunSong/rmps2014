@@ -1,0 +1,251 @@
+---
+title: "政治学方法論I：課題４"
+author: "宋財泫(ソン・ジェヒョン)"
+date: '2014-10-26'
+output: html_document
+---
+
+```{r global_option, include=FALSE}
+require(knitr) # Call knitr package
+
+# Set chunk options
+opts_chunk$set(warning=FALSE, echo=TRUE, message=TRUE, fig.align="center")
+```
+
+## 全問共通
+```{r all}
+# Stataファイルを読み込むためにforeignパッケージ、
+library(foreign)
+# 作図のためにggplot2、
+library(ggplot2)
+# データ操作とwide型→long型への変換などのためにreshape2とplyrパッケージを読み込む
+library(reshape2)
+library(plyr)
+
+# ggplotで日本語を表示するためにテーマを設定する
+theme_set(theme_gray(base_size=12, base_family="HiraginoKakuProN-W3"))
+
+# "hr96-09.dta"を読み込み、hw04の中に書き込む
+hw04 <- read.dta("hr96-09.dta")
+head(hw04) # 最初の６つのケースを表示
+tail(hw04) # 最後の６つのケースを表示
+```
+
+
+```{r prob1, fig.width=8, fig.height=5}
+# ======
+# 問題１
+# ======
+
+# ==============================
+# クロス表１：候補者の立場と当落
+# ==============================
+
+# 2005年度だけのデータを指定し、hw04.2005にsubsetとして書き込む。
+# hw04の内容が変わるとhw04.2005の中身も変わる。
+hw04.2005 <- subset(hw04, year==2005) 
+
+# statusとwlの内容を日本語に変える
+hw04.2005$status <- factor(hw04.2005$status, labels=c("新人", "現職", "元職"))
+hw04.2005$wl <- factor(hw04.2005$wl, labels=c("落選", "当選", "復活当選"))
+
+# 立候補時の候補者の立場(status)と当選有無(wl)のクロス表
+prob1.table1 <- with(hw04.2005, table(wl, status))
+print(prob1.table1)
+
+# ==============================
+# クロス表２：候補者の政党と当落
+# ==============================
+
+# hw04.2005のデータのうち、自民・公明・民主・社民・共産党のみをhw04.2005.5Pへ
+hw04.2005.5P <- subset(hw04.2005, party=="LDP" | party=="DPJ" | party=="JCP" |
+                       party=="CGP" | party=="SDP")
+
+# party変数がfactor型であるため、上記の5つの政党のみに再調整し、日本語化する。
+hw04.2005.5P$party <- factor(hw04.2005.5P$party, 
+                             labels=c("自民党", "民主党", "共産党", "公明党", "社民党"), 
+                             levels=c("LDP", "DPJ", "JCP", "CGP", "SDP"))
+
+# 政党(party)と当選有無(wl)のクロス表
+prob1.table2 <- with(hw04.2005.5P, table(wl, party))
+print(prob1.table2)
+
+# ========================================
+# モザイクプロットの作成１（prob1.table1）
+# ========================================
+
+# 立場ごとに立候補者数の合計を求める
+table.status <- table(hw04.2005$status)
+
+# 表を行列に変換
+prob1.table1 <- as.matrix(prob1.table1[1:3, 1:3])
+table.status <- as.matrix(table.status[1:3])
+
+# 各立場が全体に占める割合と、
+# 各立場についての当選、復活当選、落選の割合を変数にする
+prob1.df <- data.frame(status = levels(hw04.2005$status),
+                       status.pct = 100 * table.status / sum(table.status),
+                       win = 100 * prob1.table1[2,] / table.status,
+                       zombie = 100 * prob1.table1[3,] / table.status,
+                       lose = 100 * prob1.table1[1,] / table.status)
+
+# x軸上のカテゴリの境界値を計算する
+prob1.df$xmax <- cumsum(prob1.df$status.pct)
+prob1.df$xmin <- prob1.df$xmax - prob1.df$status.pct
+
+# 今後使わない変数status.pct列を削除する
+prob1.df$status.pct <- NULL
+
+# prob1.dfを形を変換し、ggplotで使いやすくする
+prob1.dfm <- melt(prob1.df, id=c("status", "xmin", "xmax"))
+print(prob1.dfm)
+
+# y軸上のカテゴリ間の境界値を計算し、ymaxとymin列に書き込む
+prob1.dfm1 <- ddply(prob1.dfm, .(status), transform, ymax=cumsum(value))
+prob1.dfm1 <- ddply(prob1.dfm1, .(status), transform, ymin=(ymax-value))
+
+# 文字を表示する位置を決める
+prob1.dfm1$xtext <- with(prob1.dfm1, xmin + (xmax - xmin)/2)
+prob1.dfm1$ytext <- with(prob1.dfm1, ymin + (ymax - ymin)/2)
+
+# モザイクプロットを作る
+prob1.p <- ggplot(prob1.dfm1, aes(ymin=ymin, ymax=ymax,
+                                  xmin=xmin, xmax=xmax,
+                                  fill=variable))
+
+prob1.p1 <- prob1.p + geom_rect(color = I("grey"))
+
+prob1.p2 <- prob1.p1 + geom_text(aes(x=xtext, y=ytext,
+                                     label = paste(round(value), "%")))
+
+prob1.p3 <- prob1.p2 + geom_text(aes(x=xtext, y=103,
+                                     label=c(rep("元職", 3), 
+                                             rep("新人", 3),
+                                             rep("現職",3))),
+                                 family="HiraKakuProN-W3")
+
+prob1.p4 <- prob1.p3 + labs(x="", y="") +
+  scale_fill_discrete(name="", labels=c("当選", "復活当選", "落選"))
+
+print(prob1.p4)
+# プロットを保存
+ggsave("prob1.plot1.png")
+
+
+# ========================================
+# モザイクプロットの作成２（prob1.table2）
+# ========================================
+
+# 政党ごとに立候補者数の合計を求める
+table.party <- table(hw04.2005.5P$party)
+
+# 表を行列に変換する
+prob1.table2 <- as.matrix(prob1.table2[1:3, 1:5])
+table.party <- as.matrix(table.party[1:5])
+
+# 各政党が全体に占める割合と、
+# 各政党についての当選、復活当選、落選の割合を変数にする
+prob2.df <- data.frame(party = levels(hw04.2005.5P$party),
+                       party.pct = 100 * table.party / sum(table.party),
+                       win = 100 * prob1.table2[2,] / table.party,
+                       zombie = 100 * prob1.table2[3,] / table.party,
+                       lose = 100 * prob1.table2[1,] / table.party)
+
+# x軸上のカテゴリの境界値を計算する
+prob2.df$xmax <- cumsum(prob2.df$party.pct)
+prob2.df$xmin <- prob2.df$xmax - prob2.df$party.pct
+
+# 今後使わない変数party.pct列を削除する
+prob2.df$party.pct <- NULL
+
+# prob2.dfを形を変換し、ggplotで使いやすくする。
+prob2.dfm <- melt(prob2.df, id=c("party", "xmin", "xmax"))
+print(prob2.dfm)
+
+# y軸上のカテゴリ間の境界値を計算し、ymaxとymin列に書き込む
+prob2.dfm1 <- ddply(prob2.dfm, .(party), transform, ymax=cumsum(value))
+prob2.dfm1 <- ddply(prob2.dfm1, .(party), transform, ymin=(ymax-value))
+
+# 文字を表示する位置を決める
+prob2.dfm1$xtext <- with(prob2.dfm1, xmin + (xmax - xmin)/2)
+prob2.dfm1$ytext <- with(prob2.dfm1, ymin + (ymax - ymin)/2)
+
+# モザイクプロットを作る
+prob2.p <- ggplot(prob2.dfm1, aes(ymin=ymin, ymax=ymax,
+                                  xmin=xmin, xmax=xmax,
+                                  fill=variable))
+
+prob2.p1 <- prob2.p + geom_rect(color = I("white"))
+
+prob2.p2 <- prob2.p1 + geom_text(aes(x=xtext, y=ytext,
+                                     label = paste(round(value), "%")))
+
+prob2.p3 <- prob2.p2 + geom_text(aes(x=xtext, y=103,
+                                     label=c(rep("公明党", 3), 
+                                            rep("共産党", 3),
+                                            rep("民主党", 3),
+                                            rep("社民党", 3),
+                                            rep("自民党", 3))),
+                                 family="HiraKakuProN-W3")
+
+prob2.p4 <- prob2.p3 + labs(x="", y="") +
+  scale_fill_discrete(name="", labels=c("当選", "復活当選", "落選"))
+
+# モザイクプロットを表示
+print(prob2.p4)
+# プロットを保存
+ggsave("prob1.plot2.png")
+```
+
+```{r prob2-1, fig.width=5, fig.height=6}
+# ======
+# 問題２
+# ======
+
+# 当選したか否かを従属変数とするため、当選ダミーを作る
+hw04$win <- as.numeric(hw04$wl == "win")
+# １円単位の場合、係数が０に近くなることがあるため
+# 解釈の便宜のために１００万単位で再調整
+hw04$exp.100man <- hw04$exp / 1000000
+
+# プロビット分析の結果をprob2.probitへストック
+# 従属変数：当選ダミー
+# 独立変数：選挙費用（１００万円）
+# 　　　　　当選回数
+# 　　　　　年齢
+# 　　　　　立場（現職、新人、元職）
+prob2.probit <- glm(win ~ exp.100man + previous + age + status, data=hw04, family=binomial(link="probit"))
+# 結果を表示する
+summary(prob2.probit)
+```
+
+```{r prob2-2, fig.width=5, fig.height=6}
+# 各変数ごとの係数、９５％信頼区間（両側）をデータフレームとして保存
+probit.df <- data.frame(variable = c("切片", "選挙費用(百万円)", "当選回数", "年齢", "現職", "元職"),
+                        coef = coef(prob2.probit),
+                        lower.se = confint(prob2.probit)[, 1],
+                        upper.se = confint(prob2.probit)[, 2])
+
+# 使わない行の名前を削除する
+row.names(probit.df) <- NULL
+
+# キャタピラプロットの表示
+# 係数が高い方から表示する
+coef.plot <- ggplot(probit.df, aes(x = reorder(variable, coef), 
+                                  y = coef,
+                                  ymin = lower.se,
+                                  ymax = upper.se)) +
+  # 点と線の太さを指定
+  geom_pointrange(size = 1.5) +  
+  # 基準となる０に直線を描く
+  geom_hline(aes(intercept=0), linetype="dotted") +
+  # x, y軸のラベル設定
+  xlab("独立変数") + ylab("係数の推定値") +
+  # プロットを反時計回りする
+  coord_flip()
+
+# プロットを表示する。
+print(coef.plot)
+# プロットを保存
+ggsave("prob2.plot.png")
+```
